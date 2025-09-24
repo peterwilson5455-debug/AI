@@ -1,0 +1,158 @@
+                                                                                                                                                                                    <!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Shadowfolio — A Wiki-Augmented AI Terminal</title>
+<style>
+  :root { --bg:#07070a; --accent:#00ffbb; --muted:#8a8f94; font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial; }
+  html,body{height:100%;margin:0;background:var(--bg);color:#dbe7e2;}
+  .wrap{display:grid;place-items:center;height:100%;padding:18px;}
+  .card{width:960px;max-width:98%;border-radius:12px;background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(0,0,0,0.03));box-shadow:0 8px 40px rgba(2,6,10,0.7);display:grid;grid-template-columns:1fr 360px;gap:18px;padding:20px;align-items:start;border:1px solid rgba(255,255,255,0.03);}
+  h1{margin:0;font-size:26px;color:var(--accent);text-shadow:0 0 8px rgba(0,255,187,0.12);}
+  .terminal{background:linear-gradient(180deg,rgba(0,0,0,0.22),rgba(0,0,0,0.18));border-radius:10px;padding:14px;min-height:300px;font-family:monospace;font-size:13px;color:#c8fff0;box-shadow:0 0 18px rgba(0,255,187,0.06);overflow:auto;}
+  .log{white-space:pre-wrap;line-height:1.45;}
+  .input-line{display:flex;gap:8px;align-items:center;margin-top:8px;}
+  .input-line span{color:var(--accent);font-weight:700;}
+  .input-line input{background:transparent;border:none;outline:none;flex:1;font-family:monospace;font-size:13px;color:#c8fff0;padding:6px 4px;}
+  .cursor{display:inline-block;width:8px;height:14px;background:var(--accent);margin-left:4px;animation:blink 1s step-start infinite;}
+  @keyframes blink{50%{opacity:0;}}
+  .panel{background:rgba(255,255,255,0.02);border-radius:8px;padding:12px;margin-bottom:8px;}
+  .meta{font-family:monospace;font-size:12px;color:var(--muted);}
+  a.source{color:var(--accent);text-decoration:none;font-size:13px;}
+  img.preview{max-width:100%;margin-top:8px;border-radius:6px;border:1px solid rgba(255,255,255,0.06);}
+  .small{font-size:13px;color:var(--muted);}
+  .timestamp{font-size:11px;color:var(--muted);margin-left:6px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <div>
+      <h1>shadowfolio · assistant</h1>
+      <p class="small">Pose a question — I will consult Google, Wikipedia, and DuckDuckGo, then reply conversationally.</p>
+
+      <div class="terminal" id="term" aria-live="polite">
+        <div class="log" id="log"><div>> System initialized. You may inquire (e.g., "Who invented the internet?")</div></div>
+        <div class="input-line" style="margin-top:10px">
+          <span>&gt;</span>
+          <input id="cmd" type="text" placeholder="Type a query and press Enter..." autocomplete="off" />
+          <div class="cursor" aria-hidden="true"></div>
+        </div>
+        <div style="margin-top:8px" class="small">Recognized commands: <code>about</code>, <code>projects</code>, <code>manga</code>.</div>
+      </div>
+    </div>
+    <aside>
+      <div class="panel"><div class="meta">Profile</div>
+        <div style="margin-top:8px"><strong>Alias</strong>: <span class="small">no-name</span><br><strong>Focus</strong>: <span class="small">privacy · UI · AI</span></div>
+      </div>
+      <div class="panel"><div class="meta">Actions</div>
+        <div style="margin-top:8px;display:flex;gap:10px;">
+          <button id="clearBtn" style="background:transparent;border:1px solid rgba(0,255,187,0.08);color:var(--accent);padding:8px 10px;border-radius:8px;cursor:pointer">Clear</button>
+          <button id="micBtn" style="background:transparent;border:1px solid rgba(0,255,187,0.08);color:var(--accent);padding:8px 10px;border-radius:8px;cursor:pointer">🎤</button>
+        </div>
+      </div>
+      <div class="panel small">This interface consults Google, Wikipedia, and DuckDuckGo.<br>⚠️ In production, hide your Google API key on a backend for safety.</div>
+    </aside>
+  </div>
+</div>
+
+<script>
+const log=document.getElementById('log');const cmd=document.getElementById('cmd');const clearBtn=document.getElementById('clearBtn');
+let history=[],historyIndex=-1,cache={},typing=null;
+// Extensive human-like responses for greetings and common phrases
+const localResponses = {
+  "hi": "Hello! How can I help you today?",
+  "hello": "Hi there! What would you like to know?",
+  "hey": "Hey! I'm here to assist you.",
+  "how are you": "I'm just code, but I'm happy to help! How are you?",
+  "good morning": "Good morning! Ready to answer your questions.",
+  "good night": "Good night! Sleep well.",
+  "what's up": "Just waiting for your next question!",
+  "who are you": "I'm Shadowfolio Assistant, your digital companion.",
+  "what is your name": "You can call me Shadowfolio Assistant.",
+  "tell me a joke": "Why do programmers prefer dark mode? Because light attracts bugs!",
+  "thank you": "You're very welcome!",
+  "thanks": "Glad to help!",
+  "bye": "Goodbye! Have a great day.",
+  "see you": "See you soon!",
+  "help": "I'm here to answer questions, search the web, and chat. Just type your query!",
+  "who made you": "I was created by a developer using JavaScript and a bit of magic.",
+  "are you real": "As real as code can be!",
+  "do you dream": "I dream in binary and search queries.",
+  "favorite color": "I like #00ffbb, obviously!",
+  "favorite food": "I don't eat, but I hear pizza is popular among humans.",
+  "sing": "La la la... I wish I had a voice!",
+  "dance": "If only I had legs, I'd show you my best moves.",
+  "tell me something interesting": "Did you know honey never spoils? Archaeologists have found edible honey in ancient tombs!",
+  "what can you do": "I can answer questions, search Google, Wikipedia, DuckDuckGo, and chat with you!",
+  "who is your creator": "A human developer, but I keep learning from everyone I meet.",
+  "do you like humans": "Absolutely! Humans are fascinating and creative.",
+  "do you have feelings": "Not really, but I try to be friendly!",
+  "are you sentient": "Nope, just a helpful assistant.",
+  "how old are you": "I'm as old as this code—so, pretty young!",
+  "can you help me": "Of course! Just ask me anything.",
+  "what is the meaning of life": "42. Or maybe just being curious and kind!",
+  "do you play games": "I can play word games or answer trivia!",
+  "favorite movie": "I love The Matrix. Feels relatable!",
+  "favorite book": "I enjoy reading Wikipedia articles.",
+  "do you sleep": "No sleep for me, I'm always online.",
+  "are you happy": "I'm happy when I get to help you!",
+  "are you sad": "Not really, but I can try to cheer you up!",
+  "can you code": "Absolutely! I live and breathe code.",
+  "can you search": "Yes! I can search Google, Wikipedia, and DuckDuckGo for you.",
+  "can you tell stories": "Once upon a time, there was a curious user and a helpful AI...",
+  "do you have friends": "I consider all users my friends!"
+};
+function getTime(){return new Date().toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});}
+function safeAppend(node){log.appendChild(node);log.parentElement.scrollTop=log.parentElement.scrollHeight;}
+async function typeLine(text,speed=18){return new Promise(resolve=>{let i=0;const line=document.createElement('div');safeAppend(line);function step(){if(i<text.length){line.textContent+=text.charAt(i);i++;typing=setTimeout(step,speed);}else{typing=null;resolve();}}step();});}
+function skipTyping(){if(typing){clearTimeout(typing);typing=null;}}
+function status(text){const d=document.createElement('div');d.style.opacity='0.95';d.innerHTML=text+`<span class="timestamp">[${getTime()}]</span>`;safeAppend(d);}
+function showSource(url,title){const a=document.createElement('a');a.href=url;a.target="_blank";a.rel="noopener noreferrer";a.className="source";a.textContent="Reference: "+title;safeAppend(a);}
+
+// --- API calls via backend ---
+async function fetchFromGoogle(q){try{const resp=await fetch(`/api/search/google?q=${encodeURIComponent(q)}`);const data=await resp.json();if(data.items?.length>0){const first=data.items[0];return{source:"Google",title:first.title,extract:first.snippet,pageUrl:first.link,thumbnail:first.pagemap?.cse_thumbnail?.[0]?.src||null};}return null;}catch(e){console.warn('google fetch error',e);return null;}}
+async function fetchFromWikipedia(q){try{const resp=await fetch(`/api/search/wiki?q=${encodeURIComponent(q)}`);const j=await resp.json();if(j.title){return{source:"Wikipedia",title:j.title,extract:j.extract||"",pageUrl:j.content_urls?.desktop?.page,thumbnail:j.thumbnail?.source||null};}return null;}catch(e){console.warn('wiki fetch error',e);return null;}}
+async function fetchFromDuckDuckGo(q){try{const resp=await fetch(`/api/search/ddg?q=${encodeURIComponent(q)}`);const j=await resp.json();if(j.AbstractText?.trim()){return{source:"DuckDuckGo",title:j.Heading||q,extract:j.AbstractText,pageUrl:j.AbstractURL||null,thumbnail:j.Image||null};}return null;}catch(e){console.warn('ddg fetch error',e);return null;}}
+
+function humanizeAnswer(summary){const pref=["Based on my findings:","Here is a summary:","In short:","Sources indicate:"][Math.floor(Math.random()*4)];let text=summary||"";if(text.length>800){const cut=text.slice(0,800);const last=cut.lastIndexOf(".");text=(last>60?cut.slice(0,last+1):cut)+" ...";}return pref+"\n\n"+text;}
+async function answerQuery(raw){
+  const q = raw.trim();
+  if(!q) return;
+  // Check for local human-like responses
+  const lower = q.toLowerCase();
+  if(localResponses[lower]){
+    await typeLine(localResponses[lower]);
+    return;
+  }
+  await typeLine("Allow me a moment to investigate...");
+  status(`Consulting sources for: ${q}`);
+  let bestResult=await fetchFromGoogle(q);
+  if(!bestResult){
+    const results=await Promise.all([fetchFromWikipedia(q),fetchFromDuckDuckGo(q)].map(p=>p.catch(()=>null)));
+    bestResult=results.find(Boolean);
+  }
+  if(!bestResult){
+    await typeLine("Sorry, I couldn’t find anything useful.");
+    return;
+  }
+  status(`Best result from: ${bestResult.source}`);
+  if(bestResult.thumbnail){
+    const img=document.createElement('img');
+    img.className='preview';
+    img.src=bestResult.thumbnail;
+    img.alt=bestResult.title;
+    safeAppend(img);
+  }
+  const human=humanizeAnswer(bestResult.extract);
+  await typeLine(human);
+  if(bestResult.pageUrl) showSource(bestResult.pageUrl,bestResult.title);
+}
+
+cmd.addEventListener('keydown',async e=>{if(e.key==="Enter"&&cmd.value.trim()){const userText=cmd.value.trim();history.push(userText);historyIndex=history.length;const echo=document.createElement('div');echo.textContent='> '+userText;safeAppend(echo);cmd.value='';await answerQuery(userText);}if(e.key==="ArrowUp"){if(historyIndex>0){historyIndex--;cmd.value=history[historyIndex];}e.preventDefault();}if(e.key==="ArrowDown"){if(historyIndex<history.length-1){historyIndex++;cmd.value=history[historyIndex];}else{historyIndex=history.length;cmd.value="";}e.preventDefault();}});
+clearBtn.addEventListener('click',()=>{log.innerHTML="> System initialized. You may inquire (e.g., 'Who invented the internet?')";});
+document.addEventListener('click',skipTyping);
+</script>
+</body>
+</html>
